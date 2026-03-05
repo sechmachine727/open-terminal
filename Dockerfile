@@ -5,7 +5,7 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python
-    python3 python3-pip python3-dev python3-venv \
+    python3 python3-pip python3-dev \
     # Core utilities
     coreutils findutils grep sed gawk diffutils patch \
     less file tree bc man-db \
