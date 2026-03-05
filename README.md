@@ -24,6 +24,22 @@ That's it — you're up and running at `http://localhost:8000`.
 > [!TIP]
 > If you don't set an API key, one is generated automatically. Grab it with `docker logs open-terminal`.
 
+### Bare Metal
+
+No Docker? No problem. Open Terminal is a standard Python package:
+
+```bash
+# One-liner with uvx (no install needed)
+uvx open-terminal run --host 0.0.0.0 --port 8000 --api-key your-secret-key
+
+# Or install globally with pip
+pip install open-terminal
+open-terminal run --host 0.0.0.0 --port 8000 --api-key your-secret-key
+```
+
+> [!CAUTION]
+> On bare metal, commands run directly on your machine with your user's permissions. Use Docker if you want sandboxed execution.
+
 #### Customizing the Docker Environment
 
 The easiest way to add extra packages is with environment variables — no fork needed:
@@ -49,22 +65,6 @@ For full control, fork the repo, edit the [Dockerfile](Dockerfile), and build yo
 docker build -t my-terminal .
 docker run -d --name open-terminal -p 8000:8000 my-terminal
 ```
-
-### Bare Metal
-
-No Docker? No problem. Open Terminal is a standard Python package:
-
-```bash
-# One-liner with uvx (no install needed)
-uvx open-terminal run --host 0.0.0.0 --port 8000 --api-key your-secret-key
-
-# Or install globally with pip
-pip install open-terminal
-open-terminal run --host 0.0.0.0 --port 8000 --api-key your-secret-key
-```
-
-> [!CAUTION]
-> On bare metal, commands run directly on your machine with your user's permissions. Use Docker if you want sandboxed execution.
 
 
 ## Configuration
