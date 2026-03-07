@@ -1,6 +1,11 @@
-FROM python:3.12
+FROM nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Python
+    python3 python3-pip python3-dev \
     # Core utilities
     coreutils findutils grep sed gawk diffutils patch \
     less file tree bc man-db \
@@ -25,6 +30,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps htop lsof strace sysstat \
     sudo tmux screen \
     ca-certificates gnupg apt-transport-https \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js (LTS)
@@ -49,7 +56,6 @@ RUN pip install --no-cache-dir .
 RUN useradd -m -s /bin/bash user && echo 'user ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 USER user
 ENV SHELL=/bin/bash
-ENV PATH="/home/user/.local/bin:${PATH}"
 WORKDIR /home/user
 
 EXPOSE 8000
