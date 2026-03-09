@@ -25,11 +25,11 @@ from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
 from open_terminal.env import API_KEY, BINARY_FILE_MIME_PREFIXES, CORS_ALLOWED_ORIGINS, ENABLE_NOTEBOOKS, ENABLE_TERMINAL, EXECUTE_DESCRIPTION, EXECUTE_TIMEOUT, LOG_DIR, MAX_TERMINAL_SESSIONS, MULTI_USER, TERMINAL_TERM
-from open_terminal.runner import PipeRunner, ProcessRunner, create_runner
+from open_terminal.utils.runner import PipeRunner, ProcessRunner, create_runner
 from open_terminal.utils.fs import UserFS
 
 if MULTI_USER:
-    from open_terminal.user_isolation import check_environment, resolve_user
+    from open_terminal.utils.user_isolation import check_environment, resolve_user
     check_environment()
 
 try:
@@ -1154,17 +1154,31 @@ from open_terminal.utils.port import detect_listening_ports, get_descendant_pids
     include_in_schema=False,
     dependencies=[Depends(verify_api_key)],
 )
-async def list_ports():
+async def list_ports(request: Request):
     """Return TCP ports currently listening on localhost.
 
-    Only includes ports owned by descendant processes of open-terminal
-    (i.e. things started via the terminal or /execute).
+    In multi-user mode, only shows ports owned by the requesting user.
+    In single-user mode, shows ports owned by descendant processes.
     """
     all_ports = await asyncio.to_thread(detect_listening_ports)
 
-    own_pid = os.getpid()
-    descendant_pids = await asyncio.to_thread(get_descendant_pids, own_pid)
-    all_ports = [p for p in all_ports if p.get("pid") in descendant_pids]
+    fs = get_filesystem(request)
+    if fs.username:
+        # Filter by user UID
+        import pwd
+        try:
+            user_uid = pwd.getpwnam(fs.username).pw_uid
+            all_ports = [p for p in all_ports if p.get("uid") == user_uid]
+        except KeyError:
+            all_ports = []
+    else:
+        own_pid = os.getpid()
+        descendant_pids = await asyncio.to_thread(get_descendant_pids, own_pid)
+        all_ports = [p for p in all_ports if p.get("pid") in descendant_pids]
+
+    # Strip uid from response (internal detail)
+    for p in all_ports:
+        p.pop("uid", None)
 
     return {"ports": all_ports}
 
@@ -1599,7 +1613,7 @@ if ENABLE_TERMINAL:
 # ---------------------------------------------------------------------------
 
 if ENABLE_NOTEBOOKS:
-    from open_terminal.notebooks import create_notebooks_router
+    from open_terminal.utils.notebooks import create_notebooks_router
 
     app.include_router(create_notebooks_router(verify_api_key))
 

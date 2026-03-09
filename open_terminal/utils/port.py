@@ -23,12 +23,13 @@ def detect_listening_ports() -> list[dict]:
                 with open(path) as f:
                     for line in f:
                         parts = line.strip().split()
-                        if len(parts) < 4 or parts[3] != "0A":  # 0A = LISTEN
+                        if len(parts) < 8 or parts[3] != "0A":  # 0A = LISTEN
                             continue
                         local_addr = parts[1]
                         port = int(local_addr.split(":")[1], 16)
                         if port == 0:
                             continue
+                        uid = int(parts[7]) if len(parts) > 7 else None
                         inode = parts[9] if len(parts) > 9 else ""
                         pid = _pid_from_inode(inode) if inode else None
                         pname = _process_name(pid) if pid else None
@@ -37,6 +38,7 @@ def detect_listening_ports() -> list[dict]:
                                 "port": port,
                                 "pid": pid,
                                 "process": pname,
+                                "uid": uid,
                             }
             except FileNotFoundError:
                 continue
