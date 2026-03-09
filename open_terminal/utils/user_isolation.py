@@ -69,7 +69,7 @@ def sanitize_username(user_id: str) -> str:
 def ensure_os_user(username: str) -> str:
     """Create the OS user if it doesn't exist (idempotent).
 
-    Sets ``chmod 750`` on the home directory and adds the server process
+    Sets ``chmod 2770`` on the home directory and adds the server process
     user to the new user's primary group.  This allows native Python I/O
     for reads while other provisioned users still get ``Permission denied``.
     Returns the home directory path.
@@ -87,6 +87,13 @@ def ensure_os_user(username: str) -> str:
         capture_output=True,
     )
     home_dir = f"/home/{username}"
+    # Fix ownership (home dir may pre-exist from a previous run with a
+    # different UID assignment) and set permissions.
+    subprocess.run(
+        ["sudo", "chown", f"{username}:{username}", home_dir],
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["sudo", "chmod", "2770", home_dir],
         check=True,
