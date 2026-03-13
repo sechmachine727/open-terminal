@@ -47,9 +47,10 @@ except ImportError:
 def get_system_info() -> str:
     """Gather runtime system metadata for the OpenAPI description."""
     shell = os.environ.get("SHELL", "/bin/sh")
+    user_part = f" as user '{os.getenv('USER', 'unknown')}'" if not MULTI_USER else ""
     return (
         f"This system is running {platform.system()} {platform.release()} ({platform.machine()}) "
-        f"on {socket.gethostname()} as user '{os.getenv('USER', 'unknown')}' with {shell}. "
+        f"on {socket.gethostname()}{user_part} with {shell}. "
         f"Python {sys.version.split()[0]} is available."
     )
 

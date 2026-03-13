@@ -50,12 +50,16 @@ class UserFS:
         home directory, since LLMs often hardcode that path.
         """
         if os.path.isabs(path):
-            # Swap /home/user → user's actual home when multi-user is active
+            # Swap /home/user (and /home/usr, a common LLM hallucination)
+            # → user's actual home when multi-user is active
             if self.username and self.home != "/home/user":
-                if path == "/home/user":
-                    path = self.home
-                elif path.startswith("/home/user/"):
-                    path = self.home + path[len("/home/user"):]
+                for prefix in ("/home/user", "/home/usr"):
+                    if path == prefix:
+                        path = self.home
+                        break
+                    elif path.startswith(prefix + "/"):
+                        path = self.home + path[len(prefix):]
+                        break
             return os.path.normpath(path)
         return os.path.normpath(os.path.join(self.home, path))
 

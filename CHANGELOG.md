@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.14] - 2026-03-13
+
+### Fixed
+
+- 🏠 **Multi-user home directory hints** — `get_system_info()` no longer includes `as user 'user'` in the OpenAPI description when multi-user mode is active, removing a misleading hint that caused smaller LLMs to write to `/home/user` instead of their assigned directory. ([#57](https://github.com/open-webui/open-terminal/issues/57))
+- 🔄 **`/home/usr` path rewrite** — `resolve_path()` now also rewrites `/home/usr` (a common LLM hallucination) to the provisioned user's home directory, matching the existing `/home/user` rewrite.
+
 ## [0.11.13] - 2026-03-13
 
 ### Fixed
