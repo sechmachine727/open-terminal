@@ -16,7 +16,7 @@ def _resolve_file_env(var: str, default: str = "") -> str:
     value = os.environ.get(var)
     file_path = os.environ.get(f"{var}_FILE")
 
-    if value and file_path:
+    if value is not None and file_path is not None:
         raise ValueError(
             f"Both {var} and {var}_FILE are set, but they are mutually exclusive."
         )
@@ -25,7 +25,7 @@ def _resolve_file_env(var: str, default: str = "") -> str:
         with open(file_path) as f:
             return f.read().strip()
 
-    return value or default
+    return value if value is not None else default
 
 
 API_KEY = _resolve_file_env("OPEN_TERMINAL_API_KEY", config.get("api_key", ""))

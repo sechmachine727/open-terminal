@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.23] - 2026-03-19
+
+### Fixed
+
+- 🔐 **`_FILE` mutual exclusivity bypassed by empty env vars** — setting e.g. `OPEN_TERMINAL_API_KEY=""` alongside `OPEN_TERMINAL_API_KEY_FILE` silently skipped the conflict check because empty strings are falsy. The Python helper (`_resolve_file_env`), `entrypoint.sh`, and `entrypoint-slim.sh` now test whether the variable is *set* (not merely non-empty), so any explicit assignment — including `=""` — correctly triggers the mutual-exclusivity error.
+
 ## [0.11.22] - 2026-03-19
 
 ### Fixed
