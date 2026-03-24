@@ -4,7 +4,7 @@ FROM nvidia/cuda:12.9.0-cudnn-devel-ubuntu24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Python
-    python3 python3-pip \
+    python3-full python3-pip \
     # Core utilities
     coreutils findutils grep sed gawk diffutils patch \
     less file tree bc man-db \
@@ -47,8 +47,6 @@ RUN curl -fsSL https://get.docker.com | sh
 
 
 WORKDIR /app
-
-RUN pip install --upgrade pip
 
 RUN pip install --no-cache-dir \
     numpy pandas scipy scikit-learn \
