@@ -429,10 +429,10 @@ async def list_files(
 async def read_file(
     path: str = Query(..., description="Path to the file to read."),
     start_line: Optional[int] = Query(
-        None, description="First line to return (1-indexed, inclusive). Omit to start from the beginning.", ge=1
+        None, description="First line to return (1-indexed, inclusive). Defaults to the beginning of the file.", ge=1
     ),
     end_line: Optional[int] = Query(
-        None, description="Last line to return (1-indexed, inclusive). Omit to read to the end.", ge=1
+        None, description="Last line to return (1-indexed, inclusive). Defaults to the end of the file.", ge=1
     ),
     fs: UserFS = Depends(get_filesystem),
 ):
