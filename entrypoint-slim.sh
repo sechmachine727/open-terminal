@@ -32,8 +32,10 @@ file_env() {
     local val="$def"
     eval local currentVal="\${$var:-}"
     eval local fileVal="\${$fileVar:-}"
+    eval local varIsSet="\${$var+set}"
+    eval local fileIsSet="\${$fileVar+set}"
 
-    if [ -n "$currentVal" ] && [ -n "$fileVal" ]; then
+    if [ "$varIsSet" = "set" ] && [ "$fileIsSet" = "set" ]; then
         printf >&2 'error: both %s and %s are set (but are exclusive)\n' "$var" "$fileVar"
         exit 1
     fi

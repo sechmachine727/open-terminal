@@ -98,6 +98,37 @@ class UserFS:
                 check=True, capture_output=True,
             )
 
+    async def _ensure_parents(self, path: str) -> None:
+        """Create parent directories for *path* with correct permissions.
+
+        In multi-user mode, uses ``sudo -u`` to create directories as the
+        provisioned user (so creation succeeds even inside ``755`` dirs
+        made by ``run_command``), then sets ``2770`` on each directory in
+        the chain so the server process has group-write access.
+
+        In single-user mode, falls back to plain ``makedirs``.
+        """
+        if not self.username:
+            await aiofiles.os.makedirs(path, exist_ok=True)
+            return
+        # Create as the provisioned user to bypass 755 restrictions.
+        await asyncio.to_thread(
+            subprocess.run,
+            ["sudo", "-u", self.username, "mkdir", "-p", path],
+            check=True, capture_output=True,
+        )
+        # Walk upward, setting 2770 so the server process (which is in the
+        # user's group) can create files inside these directories.
+        target = os.path.normpath(path)
+        home = os.path.normpath(self.home)
+        while target != home and target.startswith(home + "/"):
+            await asyncio.to_thread(
+                subprocess.run,
+                ["sudo", "chmod", "2770", target],
+                check=True, capture_output=True,
+            )
+            target = os.path.dirname(target)
+
     # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------
@@ -194,9 +225,7 @@ class UserFS:
         self._check_path(path)
         parent = os.path.dirname(path)
         if parent:
-            await aiofiles.os.makedirs(parent, exist_ok=True)
-            if self.username:
-                await self._chown(parent)
+            await self._ensure_parents(parent)
         async with aiofiles.open(path, "w", encoding=encoding) as f:
             await f.write(content)
         await self._chown(path)
@@ -206,9 +235,7 @@ class UserFS:
         self._check_path(path)
         parent = os.path.dirname(path)
         if parent:
-            await aiofiles.os.makedirs(parent, exist_ok=True)
-            if self.username:
-                await self._chown(parent)
+            await self._ensure_parents(parent)
         async with aiofiles.open(path, "wb") as f:
             await f.write(data)
         await self._chown(path)
@@ -216,8 +243,7 @@ class UserFS:
     async def mkdir(self, path: str) -> None:
         """Create directory *path* and parents."""
         self._check_path(path)
-        await aiofiles.os.makedirs(path, exist_ok=True)
-        await self._chown(path)
+        await self._ensure_parents(path)
 
     async def remove(self, path: str) -> None:
         """Remove *path* (file or directory)."""

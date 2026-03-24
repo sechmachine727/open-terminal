@@ -22,9 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from pypdf import PdfReader
 
-from open_terminal.env import API_KEY, BINARY_FILE_MIME_PREFIXES, CORS_ALLOWED_ORIGINS, ENABLE_NOTEBOOKS, ENABLE_TERMINAL, EXECUTE_DESCRIPTION, EXECUTE_TIMEOUT, LOG_DIR, MAX_TERMINAL_SESSIONS, MULTI_USER, OPEN_TERMINAL_INFO, PROCESS_LOG_RETENTION, TERMINAL_TERM
+from open_terminal.env import API_KEY, BINARY_FILE_MIME_PREFIXES, CORS_ALLOWED_ORIGINS, ENABLE_NOTEBOOKS, ENABLE_SYSTEM_PROMPT, ENABLE_TERMINAL, EXECUTE_DESCRIPTION, EXECUTE_TIMEOUT, LOG_DIR, MAX_TERMINAL_SESSIONS, MULTI_USER, OPEN_TERMINAL_INFO, PROCESS_LOG_RETENTION, SYSTEM_PROMPT, TERMINAL_TERM
 from open_terminal.utils.runner import PipeRunner, ProcessRunner, create_runner
 from open_terminal.utils.fs import UserFS
 
@@ -53,6 +52,31 @@ def get_system_info() -> str:
         f"on {socket.gethostname()}{user_part} with {shell}. "
         f"Python {sys.version.split()[0]} is available."
     )
+
+
+def get_system_prompt() -> str:
+    """Build a default system prompt for LLM integration."""
+    if SYSTEM_PROMPT:
+        return SYSTEM_PROMPT
+
+    shell = os.environ.get("SHELL", "/bin/sh")
+    user_part = f" as user '{os.getenv('USER', 'unknown')}'" if not MULTI_USER else ""
+
+    prompt = (
+        f"You have access to a computer running {platform.system()} {platform.release()} ({platform.machine()}) "
+        f'on host "{socket.gethostname()}"{user_part} with {shell}. '
+        f"Python {sys.version.split()[0]} is available.\n\n"
+        "Use your tools to directly interact with the system \u2014 run commands, read and write files, "
+        "and search the filesystem. "
+        "Prefer verifying the current state before making changes. "
+        "When running commands, check the output to confirm success. "
+        "If a command produces no output, that typically means it succeeded."
+    )
+
+    if OPEN_TERMINAL_INFO:
+        prompt += f"\n\n{OPEN_TERMINAL_INFO}"
+
+    return prompt
 
 
 _EXECUTE_DESCRIPTION = (
@@ -305,8 +329,21 @@ async def get_config():
         "features": {
             "terminal": ENABLE_TERMINAL,
             "notebooks": ENABLE_NOTEBOOKS,
+            "system": ENABLE_SYSTEM_PROMPT,
         },
     }
+
+
+if ENABLE_SYSTEM_PROMPT:
+
+    @app.get(
+        "/system",
+        include_in_schema=False,
+        dependencies=[Depends(verify_api_key)],
+    )
+    async def get_system():
+        """Return a system prompt for LLM integration."""
+        return {"prompt": get_system_prompt()}
 
 
 if OPEN_TERMINAL_INFO:
@@ -381,7 +418,7 @@ async def list_files(
     "/files/read",
     operation_id="read_file",
     summary="Read a file",
-    description="Return the contents of a file. Text files return JSON with a content string. Supported binary types (configurable, default: image/*) return the raw binary with the appropriate Content-Type. Unsupported binary types are rejected. Optionally specify a line range for text files. This returns file content to you but does not show anything to the user. Use display_file to let the user see a file.",
+    description="Read a file and return its contents. Supports text files and images (PNG, JPEG, WebP, etc.). For text files you can optionally request a specific line range. Images are returned as binary so you can view and analyze them directly. Use display_file to show a file to the user.",
     dependencies=[Depends(verify_api_key)],
     responses={
         404: {"description": "File not found."},
@@ -392,13 +429,14 @@ async def list_files(
 async def read_file(
     path: str = Query(..., description="Path to the file to read."),
     start_line: Optional[int] = Query(
-        None, description="First line to return (1-indexed, inclusive).", ge=1
+        None, description="First line to return (1-indexed, inclusive). Defaults to the beginning of the file.", ge=1
     ),
     end_line: Optional[int] = Query(
-        None, description="Last line to return (1-indexed, inclusive).", ge=1
+        None, description="Last line to return (1-indexed, inclusive). Defaults to the end of the file.", ge=1
     ),
     fs: UserFS = Depends(get_filesystem),
 ):
+
     target = fs.resolve_path(path)
     if not await fs.isfile(target):
         raise HTTPException(status_code=404, detail="File not found")
@@ -413,18 +451,22 @@ async def read_file(
         mime, _ = mimetypes.guess_type(target)
         mime = mime or "application/octet-stream"
 
-        # Extract text from PDFs so LLMs can read the content
-        if mime == "application/pdf":
-            reader = await asyncio.to_thread(PdfReader, target)
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-            lines = text.splitlines(keepends=True)
-            start = (start_line or 1) - 1
-            end = end_line or len(lines)
-            return {
-                "path": target,
-                "total_lines": len(lines),
-                "content": "".join(lines[start:end]),
-            }
+        # Try document text extraction (PDF, Office, OpenDocument, etc.)
+        from open_terminal.utils.documents import EXTRACTORS
+
+        for ext_mime, ext_suffix, extractor in EXTRACTORS:
+            if (ext_mime and mime == ext_mime) or (
+                ext_suffix and target.lower().endswith(ext_suffix)
+            ):
+                text = await asyncio.to_thread(extractor, target)
+                lines = text.splitlines(keepends=True)
+                start = (start_line or 1) - 1
+                end = end_line or len(lines)
+                return {
+                    "path": target,
+                    "total_lines": len(lines),
+                    "content": "".join(lines[start:end]),
+                }
 
         # Return raw binary for allowed mime type prefixes (e.g. image/*)
         if any(mime.startswith(prefix) for prefix in BINARY_FILE_MIME_PREFIXES):
@@ -1112,7 +1154,13 @@ async def list_ports(request: Request):
     """
     all_ports = await asyncio.to_thread(detect_listening_ports)
 
-    fs = get_filesystem(request)
+    try:
+        fs = get_filesystem(request)
+    except Exception:
+        # User provisioning failed (e.g. useradd rejected in restricted
+        # container runtimes).  An unprovisioned user has no ports.
+        return {"ports": []}
+
     if fs.username:
         # Filter by user UID
         import pwd

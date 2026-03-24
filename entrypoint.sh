@@ -9,7 +9,7 @@ file_env() {
     local var="$1"
     local fileVar="${var}_FILE"
     local def="${2:-}"
-    if [ "${!var:-}" ] && [ "${!fileVar:-}" ]; then
+    if [ "${!var+set}" = "set" ] && [ "${!fileVar+set}" = "set" ]; then
         printf >&2 'error: both %s and %s are set (but are exclusive)\n' "$var" "$fileVar"
         exit 1
     fi
@@ -64,7 +64,11 @@ fi
 # Auto-install Python packages
 if [ -n "${OPEN_TERMINAL_PIP_PACKAGES:-}" ]; then
     echo "Installing pip packages: $OPEN_TERMINAL_PIP_PACKAGES"
-    pip install --no-cache-dir $OPEN_TERMINAL_PIP_PACKAGES
+    if [ "${OPEN_TERMINAL_MULTI_USER:-false}" = "true" ]; then
+        sudo pip install --no-cache-dir $OPEN_TERMINAL_PIP_PACKAGES
+    else
+        pip install --no-cache-dir $OPEN_TERMINAL_PIP_PACKAGES
+    fi
 fi
 
 # -----------------------------------------------------------------------

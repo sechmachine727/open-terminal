@@ -4,6 +4,80 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.27] - 2026-03-22
+
+### Added
+
+- 🧠 **System prompt endpoint** (`GET /system`) — returns a structured system prompt for LLM integration, grounding the model in the environment (OS, hostname, user, shell, Python version) with directives for tool usage. Gated by `OPEN_TERMINAL_ENABLE_SYSTEM_PROMPT` (default `true`); advertised via `features.system` in `GET /api/config` so consumers can check support before fetching.
+- ⚙️ **`OPEN_TERMINAL_ENABLE_SYSTEM_PROMPT`** — environment variable (or `enable_system_prompt` in config.toml) to enable/disable the `/system` endpoint and feature flag. Defaults to `true`.
+- ⚙️ **`OPEN_TERMINAL_SYSTEM_PROMPT`** — environment variable (or `system_prompt` in config.toml) to fully override the generated system prompt with custom content.
+
+## [0.11.26] - 2026-03-20
+
+### Changed
+
+- ♻️ **`utils/documents.py`** — extracted all document text extraction logic from `read_file` into a dedicated module with an `EXTRACTORS` registry. Adding a new format now requires only a single function and a one-line registry entry. No behaviour changes.
+
+## [0.11.25] - 2026-03-20
+
+### Added
+
+- 📄 **Extended document text extraction** in `read_file` — `.rtf`, `.xls`, `.odt`, `.ods`, `.odp`, `.epub`, and `.eml` files are now automatically converted to text and returned in the standard JSON format. RTF strips formatting to plain text, legacy Excel (`.xls`) renders sheets as tab-separated values, OpenDocument formats (`.odt`/`.ods`/`.odp`) parse the underlying XML, EPUB extracts body text in reading order, and `.eml` extracts headers and body (with HTML tag stripping). All support `start_line`/`end_line` range selection.
+
+## [0.11.24] - 2026-03-20
+
+### Added
+
+- 📄 **Office document text extraction** in `read_file` — `.docx`, `.xlsx`, and `.pptx` files are now automatically converted to text and returned in the standard JSON format, making them readable by LLMs. Word documents extract paragraphs and table contents, Excel spreadsheets render all sheets as tab-separated values, and PowerPoint presentations extract text from all slides. Supports `start_line`/`end_line` range selection.
+
+## [0.11.23] - 2026-03-19
+
+### Fixed
+
+- 🔐 **`_FILE` mutual exclusivity bypassed by empty env vars** — setting e.g. `OPEN_TERMINAL_API_KEY=""` alongside `OPEN_TERMINAL_API_KEY_FILE` silently skipped the conflict check because empty strings are falsy. The Python helper (`_resolve_file_env`), `entrypoint.sh`, and `entrypoint-slim.sh` now test whether the variable is *set* (not merely non-empty), so any explicit assignment — including `=""` — correctly triggers the mutual-exclusivity error.
+
+## [0.11.22] - 2026-03-19
+
+### Fixed
+
+- 🐛 **`/ports` returns 500 in multi-user mode on restricted runtimes** — the endpoint triggered full user provisioning (`useradd`) just to filter ports by UID. On container runtimes that reject `useradd` (e.g. Azure Container Apps), this crashed with an unhandled exception. Now returns an empty port list when provisioning fails — an unprovisioned user has no ports to show. ([#80](https://github.com/open-webui/open-terminal/issues/80))
+- 🐳 **Docker-in-Docker broken in multi-user mode** — mounting the Docker socket (`-v /var/run/docker.sock:/var/run/docker.sock`) with `OPEN_TERMINAL_MULTI_USER=true` failed because only the default `user` account was added to the socket's group. Dynamically provisioned users now automatically inherit Docker socket group membership when the socket is mounted. ([#83](https://github.com/open-webui/open-terminal/issues/83))
+
+## [0.11.21] - 2026-03-19
+
+### Fixed
+
+- 🔍 **Port detection broken since v0.11.2** — `setcap cap_setgid+ep` on the system Python binary (added for multi-user `os.setgroups()`) made all Python processes non-dumpable, blocking `/proc/[pid]/fd/` access needed to resolve socket inodes to PIDs. Ports from user-spawned Python servers were silently filtered out. Fixed by copying the Python binary and granting `cap_setgid` only to the copy (`python3-ot`), used exclusively by the open-terminal server. The system `python3` stays capability-free so user processes remain dumpable. Slim and Alpine images had `setcap` removed entirely since they don't support multi-user mode. ([#85](https://github.com/open-webui/open-terminal/issues/85), [#63](https://github.com/open-webui/open-terminal/issues/63))
+- 📖 **README** — Image Variants table incorrectly listed multi-user mode as supported on slim and alpine images. Multi-user mode requires `sudo`, which only the full image includes.
+
+## [0.11.20] - 2026-03-15
+
+### Fixed
+
+- 👥 **Multi-user mode works when running as root** — `ensure_os_user()` no longer unconditionally requires `sudo`; when the process is already root (e.g. `user: "0:0"` in Docker Compose), user provisioning commands run directly. `check_environment()` now only requires `sudo` when not running as root, with an actionable error message pointing to the standard image or Terminals when neither root nor sudo is available. ([#60](https://github.com/open-webui/open-terminal/issues/60))
+
+## [0.11.19] - 2026-03-15
+
+### Fixed
+
+- 🔒 **`write_file` permission denied in multi-user subdirectories** — file writes into directories created by `run_command` failed because `mkdir -p` (via `sudo -u`) creates directories with default `755` permissions, leaving the server process without group-write access. `UserFS` now creates parent directories as the provisioned user (`sudo -u mkdir -p`) and sets `2770` (setgid + group rwx) on the entire directory chain, matching the home directory's permissions. Writing to the home root was unaffected. ([#70](https://github.com/open-webui/open-terminal/issues/70))
+
+## [0.11.18] - 2026-03-15
+
+### Added
+
+- ⚡ **Configurable log flush strategy** — new `OPEN_TERMINAL_LOG_FLUSH_INTERVAL` and `OPEN_TERMINAL_LOG_FLUSH_BUFFER` environment variables (or `log_flush_interval` / `log_flush_buffer` in config.toml) control how frequently process output is flushed to disk. Default `0` preserves the existing per-chunk flush behaviour. Setting `OPEN_TERMINAL_LOG_FLUSH_INTERVAL=1` reduces fsyncs from ~250/sec to ~1/sec for high-output commands, preventing I/O storms that can make ARM/eMMC systems unresponsive. ([#65](https://github.com/open-webui/open-terminal/issues/65))
+
+### Changed
+
+- 🔧 **Centralized flush control** — per-chunk `flush()` calls removed from `PtyRunner`, `PipeRunner`, and `WinPtyRunner`; flushing is now managed entirely by `BoundedLogWriter` based on the configured interval and buffer settings. An explicit final flush is performed before writing the process end marker.
+
+## [0.11.17] - 2026-03-14
+
+### Fixed
+
+- 🌐 **Global pip packages in multi-user mode** — `OPEN_TERMINAL_PIP_PACKAGES` now installs to the system-wide site-packages (`sudo pip install`) when `OPEN_TERMINAL_MULTI_USER=true`, so all provisioned users share the same packages. Previously, packages were installed to `/home/user/.local/` and only accessible to the default user. ([#68](https://github.com/open-webui/open-terminal/issues/68))
+
 ## [0.11.16] - 2026-03-13
 
 ### Removed

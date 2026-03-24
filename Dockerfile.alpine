@@ -65,7 +65,6 @@ FROM python:3.12.13-alpine
 #   Core:        tini (PID 1), su-exec (drop privileges, Alpine's gosu)
 #   Utilities:   curl, git, jq, less, procps (ps/top)
 #   Firewall:    iptables, ipset, dnsmasq (egress whitelist)
-#   Permissions: libcap (setcap for cap_setgid)
 #   Shell:       bash (the terminal API spawns bash sessions)
 #
 # ➡️  Want more tools?  Add them here, one per line for easy diffs:
@@ -98,9 +97,7 @@ COPY . .
 # that landed after the pinned base image was published.
 RUN apk upgrade --no-cache
 
-# Install the app itself (fast — all deps are already present) and grant
-# the Python binary cap_setgid so multi-user mode can call setgid().
-# ⚠️  setcap MUST run in the same layer as the binary to avoid overlay2 issues.
+# Install the app itself (fast — all deps are already present).
 #
 # Cleanup removes ~20 MB of unnecessary files:
 #   - pip itself (not needed at runtime)
@@ -112,8 +109,7 @@ RUN pip install --no-cache-dir --no-deps . \
     && pip uninstall -y pip setuptools 2>/dev/null || true \
     && find /usr/local/lib/python3.12 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
     && find /usr/local/lib/python3.12 -type f -name "*.pyc" -o -name "*.pyo" -delete 2>/dev/null || true \
-    && find /usr/local/lib/python3.12 -type d -name "tests" -o -name "test" | xargs rm -rf 2>/dev/null || true \
-    && setcap cap_setgid+ep "$(readlink -f "$(which python3)")"
+    && find /usr/local/lib/python3.12 -type d -name "tests" -o -name "test" | xargs rm -rf 2>/dev/null || true
 
 # ── Non-root user ─────────────────────────────────────────────────────────
 #

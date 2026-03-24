@@ -104,7 +104,6 @@ class PtyRunner(ProcessRunner):
                     )
                     + "\n"
                 )
-                await log_file.flush()
 
     def write_input(self, data: bytes) -> None:
         os.write(self._master_fd, data)
@@ -172,7 +171,6 @@ class PipeRunner(ProcessRunner):
                         )
                         + "\n"
                     )
-                    await log_file.flush()
 
         await asyncio.gather(
             read_stream(self._process.stdout, "stdout"),
@@ -254,7 +252,6 @@ class WinPtyRunner(ProcessRunner):
                     )
                     + "\n"
                 )
-                await log_file.flush()
 
     def write_input(self, data: bytes) -> None:
         self._pty.write(data.decode(errors="replace"))

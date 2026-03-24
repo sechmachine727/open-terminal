@@ -12,7 +12,7 @@ from typing import Optional
 import aiofiles
 import aiofiles.os
 
-from open_terminal.env import MAX_PROCESS_LOG_SIZE
+from open_terminal.env import MAX_PROCESS_LOG_SIZE, LOG_FLUSH_INTERVAL, LOG_FLUSH_BUFFER
 
 
 class BoundedLogWriter:
@@ -21,15 +21,30 @@ class BoundedLogWriter:
     When the total bytes written surpass *MAX_PROCESS_LOG_SIZE*, the file
     is truncated to its newest half and a ``log_rotated`` marker is inserted.
     Writing then continues, so the most recent output is always available.
+
+    Flushing behaviour is controlled by *flush_interval* and *flush_buffer*:
+
+    * ``flush_interval=0`` (default) — flush after every write (original
+      behaviour, safest for low-throughput commands).
+    * ``flush_interval>0`` — flush at most once per *flush_interval* seconds,
+      **or** when the unflushed buffer exceeds *flush_buffer* bytes (if set).
+      This dramatically reduces I/O pressure for high-output commands.
     """
 
-    __slots__ = ("_file", "_log_path", "_bytes_written", "rotated")
+    __slots__ = (
+        "_file", "_log_path", "_bytes_written", "rotated",
+        "_flush_interval", "_flush_buffer", "_unflushed", "_last_flush",
+    )
 
-    def __init__(self, file, log_path: str):
+    def __init__(self, file, log_path: str, *, flush_interval: float = 0, flush_buffer: int = 0):
         self._file = file
         self._log_path = log_path
         self._bytes_written = 0
         self.rotated = False
+        self._flush_interval = flush_interval
+        self._flush_buffer = flush_buffer
+        self._unflushed = 0
+        self._last_flush = time.monotonic()
 
     async def write(self, data: str) -> None:
         encoded_len = len(data.encode("utf-8", errors="replace"))
@@ -37,9 +52,27 @@ class BoundedLogWriter:
             await self._rotate()
         await self._file.write(data)
         self._bytes_written += encoded_len
+        self._unflushed += encoded_len
+
+        if self._flush_interval <= 0:
+            # Legacy behaviour: flush on every write.
+            await self._file.flush()
+            self._unflushed = 0
+            return
+
+        now = time.monotonic()
+        should_flush = (now - self._last_flush) >= self._flush_interval
+        if not should_flush and self._flush_buffer > 0:
+            should_flush = self._unflushed >= self._flush_buffer
+        if should_flush:
+            await self._file.flush()
+            self._unflushed = 0
+            self._last_flush = now
 
     async def flush(self) -> None:
         await self._file.flush()
+        self._unflushed = 0
+        self._last_flush = time.monotonic()
 
     async def _rotate(self) -> None:
         """Keep the newest half of the log file and continue writing."""
@@ -145,7 +178,16 @@ async def log_process(background_process) -> None:
         log_file = None
 
     # Wrap the log file so it rotates when the size limit is reached.
-    writer = BoundedLogWriter(log_file, background_process.log_path) if log_file else None
+    writer = (
+        BoundedLogWriter(
+            log_file,
+            background_process.log_path,
+            flush_interval=LOG_FLUSH_INTERVAL,
+            flush_buffer=LOG_FLUSH_BUFFER,
+        )
+        if log_file
+        else None
+    )
 
     try:
         await background_process.runner.read_output(writer)
@@ -156,6 +198,9 @@ async def log_process(background_process) -> None:
         background_process.status = "done"
         background_process.finished_at = time.time()
         background_process.runner.close()
+        if writer:
+            # Flush any buffered output before writing the end marker.
+            await writer.flush()
         if log_file:
             await log_file.write(
                 json.dumps(
